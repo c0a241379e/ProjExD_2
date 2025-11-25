@@ -8,10 +8,10 @@ import sys
 
 WIDTH, HEIGHT = 1100, 650
 DELTA = {
-    pg.K_UP: (0, -10),
-    pg.K_DOWN: (0, 10),
-    pg.K_LEFT: (-10, 0),
-    pg.K_RIGHT: (10, 0),
+    pg.K_UP: (0, -5),
+    pg.K_DOWN: (0, 5),
+    pg.K_LEFT: (-5, 0),
+    pg.K_RIGHT: (5, 0),
 }
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -331,7 +331,7 @@ def main() -> None:
     tmr = 0
     score = 0
     # 生存フレーム数でのクリア閾値（例: 30秒 * 50FPS = 1500フレーム）
-    CLEAR_TMR = 9999
+    CLEAR_TMR = 10
     # スコア表示用フォント
     score_font = pg.font.Font(None, 50)
 
