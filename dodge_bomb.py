@@ -23,6 +23,29 @@ def check_bound(rct: pg.Rect) -> tuple:
     in_y = 0 <= rct.top and rct.bottom <= HEIGHT
     return in_x, in_y
 
+def show_game_over(screen: pg.Surface, kk_img: pg.Surface, kk_rct: pg.Rect) -> None:
+    """ゲームオーバー画面を表示する。"""
+    # 背景を真っ暗にする
+    screen.fill((0, 0, 0))
+
+    # こうかトンの画像を切り替えて中央に配
+    kk_img = pg.transform.rotozoom(pg.image.load("fig/8.png"), 0, 1.5)   
+    kk_rct = kk_img.get_rect()
+    kk_rct.center = (WIDTH // 2, HEIGHT // 2 + 100)
+
+    # GameOver テキスト
+    font = pg.font.Font(None, 100)
+    txt_surf = font.render("GameOver", True, (255, 0, 0))
+    txt_rct = txt_surf.get_rect()
+    txt_rct.center = (WIDTH // 2, HEIGHT // 2)
+
+    # 描画
+    screen.blit(kk_img, kk_rct)
+    screen.blit(txt_surf, txt_rct)
+    pg.display.update()
+    # 表示を見せるために短く待機
+    pg.time.wait(2000)
+
 
 def main():
     pg.display.set_caption("逃げろ！こうかとん")
@@ -72,8 +95,9 @@ def main():
             vy *= -1
         bb_rct.move_ip(vx, vy)
 
-        # 衝突判定: こうかとんが爆弾と衝突したら終了
+        # 衝突判定: こうかとんが爆弾と衝突したらGameOver画面を表示して終了
         if kk_rct.colliderect(bb_rct):
+            show_game_over(screen, kk_img, kk_rct)
             return
 
         # 描画
