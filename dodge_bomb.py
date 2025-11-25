@@ -1,7 +1,9 @@
 import os
-import sys
-import random
 import pygame as pg
+import random
+import sys
+
+
 
 
 WIDTH, HEIGHT = 1100, 650
@@ -61,22 +63,23 @@ def check_bound(rct: pg.Rect, *, prev_center: tuple | None = None, obj_type: str
 
     return in_x, in_y, out_vx, out_vy
 
-def show_game_over(screen: pg.Surface, kk_img: pg.Surface, kk_rct: pg.Rect) -> None: 
-
-    """game over 画面を表示する
-        1.背景を真っ暗にする
-            ・fillで黒に塗りつぶす
-        2.こうかトンの画像を切り替えて中央に配置
-            ・get_rectで画像を取得し、rotozoomで画像の拡大 
-            ・centerで中央に配置
-        3.GameOver テキストを中央に配置
-            ・Fontでフォントの設定
-            ・renderでテキストの描画
-            ・get_rectでテキストの位置を取得し、centerで中央に配置
-        4.描画
-            ・blitでこうかトンとテキストを描画
-            ・display.updateで画面を更新
-            ・time.waitで表示を見せるために短く待機
+def show_game_over(screen: pg.Surface, kk_img: pg.Surface, kk_rct: pg.Rect) -> None:
+    """ゲームオーバー画面を表示する。
+    
+    引数:
+      screen (pg.Surface): 描画対象のスクリーン表面
+      kk_img (pg.Surface): こうかとん画像（現在は使用されない）
+      kk_rct (pg.Rect): こうかとんの矩形（現在は使用されない）
+    
+    戻り値:
+      なし（None）
+    
+    動作:
+      1. 背景を黒で塗りつぶす
+      2. こうかとん（fig/8.png）を 1.5 倍に縮放して中央下に配置
+      3. 赤い \"GameOver\" テキストを中央に配置
+      4. すべてを描画して画面更新
+      5. 2000 ms（2 秒）待機
     """
     # 背景を真っ暗にする
     screen.fill((0, 0, 0))
@@ -101,8 +104,22 @@ def show_game_over(screen: pg.Surface, kk_img: pg.Surface, kk_rct: pg.Rect) -> N
 
 
 def show_clear(screen: pg.Surface, score: int) -> None:
-    """クリア画面を表示する。
-    score を受け取り、中央にクリアとスコアを描画して短時間待機する。
+    """ゲームクリア画面を表示する。
+    
+    引数:
+      screen (pg.Surface): 描画対象のスクリーン表面
+      score (int): 生存フレーム数またはスコア値
+    
+    戻り値:
+      なし（None）
+    
+    動作:
+      1. 背景を黒で塗りつぶす
+      2. こうかとん（fig/6.png）を 1.5 倍に縮放して中央下に配置
+      3. 緑の \"Clear!\" テキストを中央やや上に配置
+      4. 白いスコア表示（\"Score: {score}\"）を中央やや下に配置
+      5. すべてを描画して画面更新
+      6. 2000 ms（2 秒）待機
     """
     screen.fill((0, 0, 0))
 
@@ -131,8 +148,21 @@ def show_clear(screen: pg.Surface, score: int) -> None:
 
 
 def prepare_bomb_images() -> tuple[list[pg.Surface], list[float]]:
-    """サイズを段階的に変えた爆弾Surfaceリストと加速度リストを返す。
-    Surfaceは 10段階（r=1..10）で作成し、加速度リストは 1.0..1.9 の倍率を返す。
+    """爆弾の段階別画像と加速度リストを生成する。
+    
+    引数:
+      なし
+    
+    戻り値:
+      tuple[list[pg.Surface], list[float]]: (bb_imgs, bb_accs)
+        - bb_imgs: サイズ 20x20 から 200x200 まで 10 段階の赤い円形 Surface リスト
+        - bb_accs: 加速度倍率 [1.0, 1.1, 1.2, ..., 1.9] のリスト
+    
+    動作:
+      1. r=1 から 10 まで、各段階で次のサイズの画像を作成
+         - サイズ: 20*r × 20*r（例: r=1 => 20x20、r=10 => 200x200）
+         - 形状: 黒い背景に赤い円（半径 10*r）を描画
+      2. 加速度倍率を 1.0 から 1.9 まで 0.1 刻みで生成
     """
     bb_imgs: list[pg.Surface] = []
     for r in range(1, 11):
@@ -148,6 +178,24 @@ def prepare_bomb_images() -> tuple[list[pg.Surface], list[float]]:
 
 
 def prepare_kokaton_images() -> dict:
+    """こうかとんの方向別画像を辞書で生成する。
+    
+    引数:
+      なし
+    
+    戻り値:
+      dict: キーは移動ベクトル (dx, dy)、値は回転・縮放済みの pygame.Surface
+            - (0, 0): 静止画（fig/3.png）
+            - (5, 0): 右向き（fig/0.png）
+            - (-5, 0): 左向き（fig/2.png）
+            - (0, 5): 下向き（fig/1.png）
+            - (0, -5): 上向き（fig/3.png）
+            - 斜め移動: 横向き画像を優先
+    
+    動作:
+      各画像を 0.9 倍に縮放してロード。指定なき移動ベクトルは
+      デフォルト画像で補完される。
+    """
     imgs = {}
     imgs[(0, 0)] = pg.transform.rotozoom(pg.image.load("fig/3.png"), 0, 0.9)
     imgs[(5, 0)] = pg.transform.rotozoom(pg.image.load("fig/0.png"), 0, 0.9)
@@ -163,9 +211,20 @@ def prepare_kokaton_images() -> dict:
 
 
 def chase_vector(org: pg.Rect, dst: pg.Rect, current_vx: float, current_vy: float) -> tuple:
-    """爆弾がこうかとんに近づくように移動ベクトルを計算する。
-    距離が500未満なら慣性（current_vx, current_vy）を維持し、
-    それ以上なら差ベクトルを√50に正規化して速度ベクトルを返す。
+    """爆弾がこうかとん方向に移動する追従ベクトルを計算する。
+    
+    引数:
+      org (pg.Rect): 爆弾の Rect（追従元）
+      dst (pg.Rect): こうかとんの Rect（追従先）
+      current_vx (float): 現在の x 方向速度（慣性維持用）
+      current_vy (float): 現在の y 方向速度（慣性維持用）
+    
+    戻り値:
+      tuple: (vx, vy) 移動ベクトル
+    
+    動作:
+      - 距離が 500 px 未満: 現在の速度 (current_vx, current_vy) をそのまま返す（慣性）
+      - 距離が 500 px 以上: dst - org の差ベクトルを √50 に正規化して返す（追従）
     """
     org_x, org_y = org.center
     dst_x, dst_y = dst.center
@@ -175,7 +234,7 @@ def chase_vector(org: pg.Rect, dst: pg.Rect, current_vx: float, current_vy: floa
     distance = (dx ** 2 + dy ** 2) ** 0.5
 
     # 近ければ慣性で移動
-    if distance < 500:
+    if distance < 300:
         return current_vx, current_vy
 
     target_norm = 50 ** 0.5  # √50
@@ -189,9 +248,22 @@ def chase_vector(org: pg.Rect, dst: pg.Rect, current_vx: float, current_vy: floa
 
 
 
-def  calc_orientation(org: pg.Rect, dst: pg.Rect, current_xy: tuple[float, float])-> tuple[float, float]:
-    """2つのRectの位置関係から、向きを計算する関数
-    戻り値はx方向、y方向の向き（-1.0, 0.0, 1.0のいずれか）を含むタプル
+def calc_orientation(org: pg.Rect, dst: pg.Rect, current_xy: tuple[float, float]) -> tuple[float, float]:
+    """2つのRectの位置関係から相対方向を計算する。
+    
+    引数:
+      org (pg.Rect): 基準となるオブジェクトの Rect
+      dst (pg.Rect): 比較対象のオブジェクトの Rect
+      current_xy (tuple[float, float]): 未使用（互換性保持のためのみ）
+    
+    戻り値:
+      tuple[float, float]: (orientation_x, orientation_y)
+        - x 方向: 1.0（dst が右）/ -1.0（dst が左）/ 0.0（同じ x 座標）
+        - y 方向: 1.0（dst が下）/ -1.0（dst が上）/ 0.0（同じ y 座標）
+    
+    動作:
+      org から dst への相対位置を x・y それぞれで判定し、
+      方向を -1.0 / 0.0 / 1.0 の 3 値で表現する。
     """
     dir_x = dst.centerx - org.centerx
     dir_y = dst.centery - org.centery
@@ -212,7 +284,29 @@ def  calc_orientation(org: pg.Rect, dst: pg.Rect, current_xy: tuple[float, float
 
     return (orientation_x, orientation_y)
 
-def main():
+def main() -> None:
+    """ゲームメインループ。
+    引数:
+      なし
+    
+    戻り値:
+      なし（None）
+    
+    動作:
+      1. Pygame 初期化済みを前提に、ゲームウィンドウ・画像・フォントを準備
+      2. ゲームループを 50 FPS で実行
+         - プレイヤー（こうかとん）の入力に応じて移動・画像切り替え
+         - 爆弾の段階的成長・追従・壁反射を計算
+         - スコア（生存フレーム）を毎フレーム加算
+         - 衝突判定: プレイヤーが爆弾に触れたら show_game_over()
+         - クリア判定: 生存時間が CLEAR_TMR 以上なら show_clear()
+      3. 画面上にスコアを左上に表示
+      4. ウィンドウを閉じるかゲーム終了時に return
+    
+    グローバル変数使用:
+      - WIDTH, HEIGHT: 画面サイズ（1100x650）
+      - DELTA: キー入力対応の移動量辞書
+    """
     pg.display.set_caption("逃げろ！こうかとん")
     screen = pg.display.set_mode((WIDTH, HEIGHT))
     bg_img = pg.image.load("fig/pg_bg.jpg")
@@ -253,6 +347,7 @@ def main():
             if key_lst[k]:
                 sum_mv[0] += mv[0]
                 sum_mv[1] += mv[1]
+
 
         # 合計移動量タプルに対応する画像を選択
         kk_img = kk_imgs.get((sum_mv[0], sum_mv[1]), kk_img)
