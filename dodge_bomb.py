@@ -6,10 +6,10 @@ import pygame as pg
 
 WIDTH, HEIGHT = 1100, 650
 DELTA = {
-    pg.K_UP: (0, -5),
-    pg.K_DOWN: (0, 5),
-    pg.K_LEFT: (-5, 0),
-    pg.K_RIGHT: (5, 0),
+    pg.K_UP: (0, -10),
+    pg.K_DOWN: (0, 10),
+    pg.K_LEFT: (-10, 0),
+    pg.K_RIGHT: (10, 0),
 }
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -25,7 +25,7 @@ def check_bound(rct: pg.Rect) -> tuple:
 
 def show_game_over(screen: pg.Surface, kk_img: pg.Surface, kk_rct: pg.Rect) -> None: 
 
-    """(このコメントは最後に消す)game over 画面を表示する
+    """game over 画面を表示する
         1.背景を真っ暗にする
             ・fillで黒に塗りつぶす
         2.こうかトンの画像を切り替えて中央に配置
@@ -62,9 +62,39 @@ def show_game_over(screen: pg.Surface, kk_img: pg.Surface, kk_rct: pg.Rect) -> N
     pg.time.wait(2000)
 
 
-def prepare_bomb_images() -> tuple[list[pg.Surface], list[int]]:
+def show_clear(screen: pg.Surface, score: int) -> None:
+    """クリア画面を表示する。
+    score を受け取り、中央にクリアとスコアを描画して短時間待機する。
+    """
+    screen.fill((0, 0, 0))
+
+    # こうかとんを少し大きくして中央に表示
+    kk_img = pg.transform.rotozoom(pg.image.load("fig/6.png"), 0, 1.5)
+    kk_rct = kk_img.get_rect()
+    kk_rct.center = (WIDTH // 2, HEIGHT // 2 + 80)
+
+    # Clear テキスト
+    font_big = pg.font.Font(None, 100)
+    txt_surf = font_big.render("Clear!", True, (0, 255, 0))
+    txt_rct = txt_surf.get_rect()
+    txt_rct.center = (WIDTH // 2, HEIGHT // 2 - 40)
+
+    # スコア表示
+    font_score = pg.font.Font(None, 50)
+    score_surf = font_score.render(f"Score: {score}", True, (255, 255, 255))
+    score_rct = score_surf.get_rect()
+    score_rct.center = (WIDTH // 2, HEIGHT // 2 + 140)
+
+    screen.blit(kk_img, kk_rct)
+    screen.blit(txt_surf, txt_rct)
+    screen.blit(score_surf, score_rct)
+    pg.display.update()
+    pg.time.wait(2000)
+
+
+def prepare_bomb_images() -> tuple[list[pg.Surface], list[float]]:
     """サイズを段階的に変えた爆弾Surfaceリストと加速度リストを返す。
-    Surfaceは 10段階（r=1..10）で作成し、加速度リストは 1..10 の整数を返す。
+    Surfaceは 10段階（r=1..10）で作成し、加速度リストは 1.0..1.9 の倍率を返す。
     """
     bb_imgs: list[pg.Surface] = []
     for r in range(1, 11):
@@ -74,10 +104,75 @@ def prepare_bomb_images() -> tuple[list[pg.Surface], list[int]]:
         pg.draw.circle(surf, (255, 0, 0), (size // 2, size // 2), 10 * r)
         surf.set_colorkey((0, 0, 0))
         bb_imgs.append(surf)
-    bb_accs = [a for a in range(1, 11)]
+    # 加速度リスト（倍率）: 1.0 から 1.9 まで段階的に増加
+    bb_accs = [1.0 + 0.1 * a for a in range(10)]
     return bb_imgs, bb_accs
 
-  
+
+def prepare_kokaton_images() -> dict:
+    imgs = {}
+    imgs[(0, 0)] = pg.transform.rotozoom(pg.image.load("fig/3.png"), 0, 0.9)
+    imgs[(5, 0)] = pg.transform.rotozoom(pg.image.load("fig/0.png"), 0, 0.9)
+    imgs[(-5, 0)] = pg.transform.rotozoom(pg.image.load("fig/2.png"), 0, 0.9)
+    imgs[(0, 5)] = pg.transform.rotozoom(pg.image.load("fig/1.png"), 0, 0.9)
+    imgs[(0, -5)] = pg.transform.rotozoom(pg.image.load("fig/3.png"), 0, 0.9)
+    # 斜め移動は横向き画像を優先（好みで変更可）
+    imgs[(5, 5)] = imgs[(5, 0)]
+    imgs[(5, -5)] = imgs[(5, 0)]
+    imgs[(-5, 5)] = imgs[(-5, 0)]
+    imgs[(-5, -5)] = imgs[(-5, 0)]
+    return imgs
+
+
+def chase_vector(org: pg.Rect, dst: pg.Rect, current_vx: float, current_vy: float) -> tuple:
+    """爆弾がこうかとんに近づくように移動ベクトルを計算する。
+    距離が500未満なら慣性（current_vx, current_vy）を維持し、
+    それ以上なら差ベクトルを√50に正規化して速度ベクトルを返す。
+    """
+    org_x, org_y = org.center
+    dst_x, dst_y = dst.center
+
+    dx = dst_x - org_x
+    dy = dst_y - org_y
+    distance = (dx ** 2 + dy ** 2) ** 0.5
+
+    # 近ければ慣性で移動
+    if distance < 500:
+        return current_vx, current_vy
+
+    target_norm = 50 ** 0.5  # √50
+    if distance > 0:
+        vx = (dx / distance) * target_norm
+        vy = (dy / distance) * target_norm
+    else:
+        vx, vy = 0, 0
+
+    return vx, vy
+
+
+
+def  calc_orientation(org: pg.Rect, dst: pg.Rect, current_xy: tuple[float, float])-> tuple[float, float]:
+    """2つのRectの位置関係から、向きを計算する関数
+    戻り値はx方向、y方向の向き（-1.0, 0.0, 1.0のいずれか）を含むタプル
+    """
+    dir_x = dst.centerx - org.centerx
+    dir_y = dst.centery - org.centery
+
+    if dir_x > 0:
+        orientation_x = 1.0
+    elif dir_x < 0:
+        orientation_x = -1.0
+    else:
+        orientation_x = 0.0
+
+    if dir_y > 0:
+        orientation_y = 1.0
+    elif dir_y < 0:
+        orientation_y = -1.0
+    else:
+        orientation_y = 0.0
+
+    return (orientation_x, orientation_y)
 
 def main():
     pg.display.set_caption("逃げろ！こうかとん")
@@ -87,6 +182,9 @@ def main():
     kk_rct = kk_img.get_rect()
     kk_rct.center = 300, 200
 
+    # こうかとん画像辞書を準備
+    kk_imgs = prepare_kokaton_images()
+
     # 爆弾Surfaceリストと加速度リストを準備（10段階）
     bb_imgs, bb_accs = prepare_bomb_images()
     idx = 0
@@ -94,10 +192,14 @@ def main():
     bb_rct = bb_img.get_rect()
     bb_rct.center = random.randint(bb_img.get_width() // 2, WIDTH - bb_img.get_width() // 2), random.randint(bb_img.get_height() // 2, HEIGHT - bb_img.get_height() // 2)
     vx, vy = 5, 5
-
-
     clock = pg.time.Clock()
     tmr = 0
+    score = 0
+    # 生存フレーム数でのクリア閾値（例: 30秒 * 50FPS = 1500フレーム）
+    CLEAR_TMR = 1500
+    # スコア表示用フォント
+    score_font = pg.font.Font(None, 50)
+
     while True:
         for event in pg.event.get():
             if event.type == pg.QUIT:   # クリックされたら
@@ -111,29 +213,50 @@ def main():
                 sum_mv[0] += mv[0]
                 sum_mv[1] += mv[1]
 
+        # 合計移動量タプルに対応する画像を選択
+        kk_img = kk_imgs.get((sum_mv[0], sum_mv[1]), kk_img)
+
         # こうかとんを移動させ，画面外になったら移動前の位置に戻す
         prev_center = kk_rct.center
         kk_rct.move_ip(sum_mv)
         in_x, in_y = check_bound(kk_rct)
         if not (in_x and in_y):
             kk_rct.center = prev_center
-        # 爆弾の段階（サイズ）と加速度を選び，移動量を計算して移動_テスト用にoverに表現して
-        idx = min(tmr // 500, len(bb_imgs) - 1)
+        # 爆弾の段階（サイズ）と加速度を選択
+        idx = min(tmr // 300, len(bb_imgs) - 1)
         if bb_img is not bb_imgs[idx]:
             old_center = bb_rct.center
             bb_img = bb_imgs[idx]
             bb_rct = bb_img.get_rect()
             bb_rct.center = old_center
+            # Surfaceのサイズが変わった場合、Rectのサイズ属性を更新
+            bb_rct.width = bb_img.get_rect().width
+            bb_rct.height = bb_img.get_rect().height
+        # 追従ベクトルを計算
+        vx, vy = chase_vector(bb_rct, kk_rct, vx, vy)
 
+        # 次フレームでの移動量を計算して画面内かを判定
         avx = int(vx * bb_accs[idx])
         avy = int(vy * bb_accs[idx])
         next_bb = bb_rct.move(avx, avy)
         in_x_bb, in_y_bb = check_bound(next_bb)
+
+        # 画面外に出そうなら即座に速度成分の符号を反転して反射させる
         if not in_x_bb:
-            vx *= -1
+            vx = -vx
         if not in_y_bb:
-            vy *= -1
+            vy = -vy
+
+        # 反射後の速度で移動（加速度倍率をかけて整数化）
         bb_rct.move_ip(int(vx * bb_accs[idx]), int(vy * bb_accs[idx]))
+
+        # スコアを時間経過で増加（フレーム毎に1ポイント）
+        score += 1
+
+        # クリア判定: 一定フレーム生存でクリア画面を表示して終了
+        if tmr >= CLEAR_TMR:
+            show_clear(screen, score)
+            return
 
         # 衝突判定: こうかとんが爆弾と衝突したらGameOver画面を表示して終了
         if kk_rct.colliderect(bb_rct):
@@ -144,6 +267,10 @@ def main():
         screen.blit(bg_img, [0, 0])
         screen.blit(bb_img, bb_rct)
         screen.blit(kk_img, kk_rct)
+
+        # スコア描画（画面上に重ねる）
+        score_surf = score_font.render(f"Score: {score}", True, (255, 255, 255))
+        screen.blit(score_surf, (10, 10))
 
         pg.display.update()
         tmr += 1
