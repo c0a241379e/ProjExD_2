@@ -23,12 +23,27 @@ def check_bound(rct: pg.Rect) -> tuple:
     in_y = 0 <= rct.top and rct.bottom <= HEIGHT
     return in_x, in_y
 
-def show_game_over(screen: pg.Surface, kk_img: pg.Surface, kk_rct: pg.Rect) -> None:
-    """ゲームオーバー画面を表示する。"""
+def show_game_over(screen: pg.Surface, kk_img: pg.Surface, kk_rct: pg.Rect) -> None: 
+
+    """(このコメントは最後に消す)game over 画面を表示する
+        1.背景を真っ暗にする
+            ・fillで黒に塗りつぶす
+        2.こうかトンの画像を切り替えて中央に配置
+            ・get_rectで画像を取得し、rotozoomで画像の拡大 
+            ・centerで中央に配置
+        3.GameOver テキストを中央に配置
+            ・Fontでフォントの設定
+            ・renderでテキストの描画
+            ・get_rectでテキストの位置を取得し、centerで中央に配置
+        4.描画
+            ・blitでこうかトンとテキストを描画
+            ・display.updateで画面を更新
+            ・time.waitで表示を見せるために短く待機
+    """
     # 背景を真っ暗にする
     screen.fill((0, 0, 0))
 
-    # こうかトンの画像を切り替えて中央に配
+    # こうかトンの画像を切り替えて中央に配置
     kk_img = pg.transform.rotozoom(pg.image.load("fig/8.png"), 0, 1.5)   
     kk_rct = kk_img.get_rect()
     kk_rct.center = (WIDTH // 2, HEIGHT // 2 + 100)
@@ -56,13 +71,15 @@ def main():
     kk_rct.center = 300, 200
 
     # 爆弾Surfaceを作成（半径10、赤）、黒を透明にする
+    bb_radius = 10  # 爆弾の初期半径
     bb_img = pg.Surface((20, 20))
     bb_img.fill((0, 0, 0))
-    pg.draw.circle(bb_img, (255, 0, 0), (10, 10), 10)
+    pg.draw.circle(bb_img, (255, 0, 0), (10, 10), bb_radius)
     bb_img.set_colorkey((0, 0, 0))
     bb_rct = bb_img.get_rect()
-    bb_rct.center = random.randint(10, WIDTH - 10), random.randint(10, HEIGHT - 10)
+    bb_rct.center = random.randint(bb_radius + 10, WIDTH - bb_radius - 10), random.randint(bb_radius + 10, HEIGHT - bb_radius - 10)
     vx, vy = 5, 5
+    base_vx, base_vy = vx, vy  # 基本速度を記憶（加速計算用）
 
     clock = pg.time.Clock()
     tmr = 0
@@ -85,6 +102,43 @@ def main():
         in_x, in_y = check_bound(kk_rct)
         if not (in_x and in_y):
             kk_rct.center = prev_center
+    
+
+        """
+        爆弾の拡大・加速処理
+        1. 50フレームごとに爆弾の半径を1増加させる
+            ・# 基本速度を記憶（base_vx, base_vy）
+            ・if文で50フレームごとに処理を実行
+            ・pg.Surfaceとpg.draw.circleで新しい爆弾画像を作成
+            ・set_colorkeyで黒を透明に設定
+        2. 爆弾の速度を1.02倍にする 
+            ・base_vx, base_vyを使って速度を計算
+            ・速度を整数に変換
+        3. 爆弾画像の再描画 
+            ・古い中心位置を保存
+            ・新しい爆弾画像のRectを取得し、中心位置を古い位置に設定
+        """
+        if tmr % 50 == 0:
+            # 爆弾の半径を1増加
+            bb_radius += 3
+            # 爆弾画像の再作成
+            bb_img = pg.Surface((bb_radius * 2, bb_radius * 2))
+            bb_img.fill((0, 0, 0))
+            pg.draw.circle(bb_img, (255, 0, 0), (bb_radius, bb_radius), bb_radius)
+            bb_img.set_colorkey((0, 0, 0))
+            # 古い中心位置を保存
+            old_center = bb_rct.center
+            # 新しい爆弾画像のRectを取得し、中心位置を古い位置に設定
+            bb_rct = bb_img.get_rect()
+            bb_rct.center = old_center
+
+
+            # 爆弾の速度を1.02倍にする
+            base_vx *= 1.02
+            base_vy *= 1.02
+            vx = int(base_vx) if vx > 0 else -int(base_vx)
+            vy = int(base_vy) if vy > 0 else -int(base_vy)
+            
 
         # 爆弾の次フレーム位置を確認し，画面外に出る方向の速度を反転して移動
         next_bb = bb_rct.move(vx, vy)
