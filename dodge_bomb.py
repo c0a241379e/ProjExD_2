@@ -72,6 +72,10 @@ def main():
             vy *= -1
         bb_rct.move_ip(vx, vy)
 
+        # 衝突判定: こうかとんが爆弾と衝突したら終了
+        if kk_rct.colliderect(bb_rct):
+            return
+
         # 描画
         screen.blit(bg_img, [0, 0])
         screen.blit(bb_img, bb_rct)
