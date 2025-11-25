@@ -15,13 +15,51 @@ DELTA = {
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 
-def check_bound(rct: pg.Rect) -> tuple:
-    """Rectが画面内なら (True, True) を返す。
-    戻り値 (in_x, in_y) は横方向・縦方向が画面内かを示す。
+def check_bound(rct: pg.Rect, *, prev_center: tuple | None = None, obj_type: str | None = None, vx: float | None = None, vy: float | None = None) -> tuple:
+    """Rect が画面内かを判定する。
+
+    基本戻り値は (in_x, in_y) だが、オプションでオブジェクト種別を渡すと副作用を行う：
+    - obj_type='player': 画面外なら rct を `prev_center` に戻す（移動前に戻す）。
+    - obj_type='bomb'  : 画面外になった軸について vx/vy の符号を反転し、
+                         画面外の場合は rct を `prev_center` に戻す（1 フレーム分戻す）。
+
+    引数:
+      rct: 判定対象の Rect
+      prev_center: 画面外だったときに戻すための直前の中心座標（(x,y)）
+      obj_type: 'player' または 'bomb'（もしくは None）
+      vx, vy: 爆弾用の速度成分（obj_type='bomb' のときのみ使用）
+
+    戻り値:
+      (in_x, in_y, vx, vy)
+      - vx, vy は obj_type='bomb' の場合に更新された速度（反転済み）を返す。
+      - それ以外の場合は vx, vy に None を返す。
     """
     in_x = 0 <= rct.left and rct.right <= WIDTH
     in_y = 0 <= rct.top and rct.bottom <= HEIGHT
-    return in_x, in_y
+
+    out_vx, out_vy = None, None
+    # プレイヤーならはみ出していたら直前位置に戻す
+    if obj_type == 'player':
+        if not (in_x and in_y) and prev_center is not None:
+            rct.center = prev_center
+
+    # 爆弾ならはみ出した軸の速度を反転し、はみ出していたら直前位置に戻す
+    if obj_type == 'bomb':
+        if vx is None or vy is None:
+            out_vx, out_vy = vx, vy
+        else:
+            if not in_x:
+                out_vx = -vx
+            else:
+                out_vx = vx
+            if not in_y:
+                out_vy = -vy
+            else:
+                out_vy = vy
+        if not (in_x and in_y) and prev_center is not None:
+            rct.center = prev_center
+
+    return in_x, in_y, out_vx, out_vy
 
 def show_game_over(screen: pg.Surface, kk_img: pg.Surface, kk_rct: pg.Rect) -> None: 
 
@@ -190,13 +228,16 @@ def main():
     idx = 0
     bb_img = bb_imgs[idx]
     bb_rct = bb_img.get_rect()
-    bb_rct.center = random.randint(bb_img.get_width() // 2, WIDTH - bb_img.get_width() // 2), random.randint(bb_img.get_height() // 2, HEIGHT - bb_img.get_height() // 2)
+    # 爆弾の初期位置（中心座標）を画面内のランダムな点に設定
+    bb_x = random.randint(bb_img.get_width() // 2, WIDTH - bb_img.get_width() // 2)
+    bb_y = random.randint(bb_img.get_height() // 2, HEIGHT - bb_img.get_height() // 2)
+    bb_rct.center = (bb_x, bb_y)
     vx, vy = 5, 5
     clock = pg.time.Clock()
     tmr = 0
     score = 0
     # 生存フレーム数でのクリア閾値（例: 30秒 * 50FPS = 1500フレーム）
-    CLEAR_TMR = 1500
+    CLEAR_TMR = 9999
     # スコア表示用フォント
     score_font = pg.font.Font(None, 50)
 
@@ -216,12 +257,10 @@ def main():
         # 合計移動量タプルに対応する画像を選択
         kk_img = kk_imgs.get((sum_mv[0], sum_mv[1]), kk_img)
 
-        # こうかとんを移動させ，画面外になったら移動前の位置に戻す
+        # こうかとんを移動させ，画面外なら check_bound 内で移動前の位置に戻す
         prev_center = kk_rct.center
         kk_rct.move_ip(sum_mv)
-        in_x, in_y = check_bound(kk_rct)
-        if not (in_x and in_y):
-            kk_rct.center = prev_center
+        in_x, in_y, _, _ = check_bound(kk_rct, prev_center=prev_center, obj_type='player')
         # 爆弾の段階（サイズ）と加速度を選択
         idx = min(tmr // 300, len(bb_imgs) - 1)
         if bb_img is not bb_imgs[idx]:
@@ -235,20 +274,18 @@ def main():
         # 追従ベクトルを計算
         vx, vy = chase_vector(bb_rct, kk_rct, vx, vy)
 
-        # 次フレームでの移動量を計算して画面内かを判定
+        # 移動量を計算し、実際に移動してから画面内かを判定する
         avx = int(vx * bb_accs[idx])
         avy = int(vy * bb_accs[idx])
-        next_bb = bb_rct.move(avx, avy)
-        in_x_bb, in_y_bb = check_bound(next_bb)
-
-        # 画面外に出そうなら即座に速度成分の符号を反転して反射させる
-        if not in_x_bb:
-            vx = -vx
-        if not in_y_bb:
-            vy = -vy
-
-        # 反射後の速度で移動（加速度倍率をかけて整数化）
-        bb_rct.move_ip(int(vx * bb_accs[idx]), int(vy * bb_accs[idx]))
+        prev_center_bb = bb_rct.center
+        bb_rct.move_ip(avx, avy)
+        # 実際の移動後のRectで判定（check_boundが位置復元・速度反転を行う）
+        in_x_bb, in_y_bb, new_vx, new_vy = check_bound(bb_rct, prev_center=prev_center_bb, obj_type='bomb', vx=vx, vy=vy)
+        # 返ってきた速度で更新（check_bound が None を返すことはないはずだが念のため）
+        if new_vx is not None:
+            vx = new_vx
+        if new_vy is not None:
+            vy = new_vy
 
         # スコアを時間経過で増加（フレーム毎に1ポイント）
         score += 1
