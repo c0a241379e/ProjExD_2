@@ -1,5 +1,6 @@
 import os
 import sys
+import random
 import pygame as pg
 
 
@@ -16,7 +17,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 def check_bound(rct: pg.Rect) -> tuple:
     """Rectが画面内なら (True, True) を返す。
-    False を含む要素がある場合、その方向は画面外を示す。
+    戻り値 (in_x, in_y) は横方向・縦方向が画面内かを示す。
     """
     in_x = 0 <= rct.left and rct.right <= WIDTH
     in_y = 0 <= rct.top and rct.bottom <= HEIGHT
@@ -26,27 +27,56 @@ def check_bound(rct: pg.Rect) -> tuple:
 def main():
     pg.display.set_caption("逃げろ！こうかとん")
     screen = pg.display.set_mode((WIDTH, HEIGHT))
-    bg_img = pg.image.load("fig/pg_bg.jpg")    
+    bg_img = pg.image.load("fig/pg_bg.jpg")
     kk_img = pg.transform.rotozoom(pg.image.load("fig/3.png"), 0, 0.9)
     kk_rct = kk_img.get_rect()
     kk_rct.center = 300, 200
+
+    # 爆弾Surfaceを作成（半径10、赤）、黒を透明にする
+    bb_img = pg.Surface((20, 20))
+    bb_img.fill((0, 0, 0))
+    pg.draw.circle(bb_img, (255, 0, 0), (10, 10), 10)
+    bb_img.set_colorkey((0, 0, 0))
+    bb_rct = bb_img.get_rect()
+    bb_rct.center = random.randint(10, WIDTH - 10), random.randint(10, HEIGHT - 10)
+    vx, vy = 5, 5
+
     clock = pg.time.Clock()
     tmr = 0
     while True:
         for event in pg.event.get():
             if event.type == pg.QUIT:   # クリックされたら
                 return
-        screen.blit(bg_img, [0, 0]) 
+        screen.blit(bg_img, [0, 0])
 
         key_lst = pg.key.get_pressed()
         sum_mv = [0, 0]
         for k, mv in DELTA.items():
             if key_lst[k]:
-                sum_mv[0] += mv[0]  # 横方向
-                sum_mv[1] += mv[1]  # 縦方向
-                
+                sum_mv[0] += mv[0]
+                sum_mv[1] += mv[1]
+
+        # こうかとんを移動させ，画面外になったら移動前の位置に戻す
+        prev_center = kk_rct.center
         kk_rct.move_ip(sum_mv)
+        in_x, in_y = check_bound(kk_rct)
+        if not (in_x and in_y):
+            kk_rct.center = prev_center
+
+        # 爆弾の次フレーム位置を確認し，画面外に出る方向の速度を反転して移動
+        next_bb = bb_rct.move(vx, vy)
+        in_x_bb, in_y_bb = check_bound(next_bb)
+        if not in_x_bb:
+            vx *= -1
+        if not in_y_bb:
+            vy *= -1
+        bb_rct.move_ip(vx, vy)
+
+        # 描画
+        screen.blit(bg_img, [0, 0])
+        screen.blit(bb_img, bb_rct)
         screen.blit(kk_img, kk_rct)
+
         pg.display.update()
         tmr += 1
         clock.tick(50)
