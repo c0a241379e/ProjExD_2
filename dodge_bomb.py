@@ -62,6 +62,23 @@ def show_game_over(screen: pg.Surface, kk_img: pg.Surface, kk_rct: pg.Rect) -> N
     pg.time.wait(2000)
 
 
+def prepare_bomb_images() -> tuple[list[pg.Surface], list[int]]:
+    """サイズを段階的に変えた爆弾Surfaceリストと加速度リストを返す。
+    Surfaceは 10段階（r=1..10）で作成し、加速度リストは 1..10 の整数を返す。
+    """
+    bb_imgs: list[pg.Surface] = []
+    for r in range(1, 11):
+        size = 20 * r
+        surf = pg.Surface((size, size))
+        surf.fill((0, 0, 0))
+        pg.draw.circle(surf, (255, 0, 0), (size // 2, size // 2), 10 * r)
+        surf.set_colorkey((0, 0, 0))
+        bb_imgs.append(surf)
+    bb_accs = [a for a in range(1, 11)]
+    return bb_imgs, bb_accs
+
+  
+
 def main():
     pg.display.set_caption("逃げろ！こうかとん")
     screen = pg.display.set_mode((WIDTH, HEIGHT))
@@ -70,16 +87,14 @@ def main():
     kk_rct = kk_img.get_rect()
     kk_rct.center = 300, 200
 
-    # 爆弾Surfaceを作成（半径10、赤）、黒を透明にする
-    bb_radius = 10  # 爆弾の初期半径
-    bb_img = pg.Surface((20, 20))
-    bb_img.fill((0, 0, 0))
-    pg.draw.circle(bb_img, (255, 0, 0), (10, 10), bb_radius)
-    bb_img.set_colorkey((0, 0, 0))
+    # 爆弾Surfaceリストと加速度リストを準備（10段階）
+    bb_imgs, bb_accs = prepare_bomb_images()
+    idx = 0
+    bb_img = bb_imgs[idx]
     bb_rct = bb_img.get_rect()
-    bb_rct.center = random.randint(bb_radius + 10, WIDTH - bb_radius - 10), random.randint(bb_radius + 10, HEIGHT - bb_radius - 10)
+    bb_rct.center = random.randint(bb_img.get_width() // 2, WIDTH - bb_img.get_width() // 2), random.randint(bb_img.get_height() // 2, HEIGHT - bb_img.get_height() // 2)
     vx, vy = 5, 5
-    base_vx, base_vy = vx, vy  # 基本速度を記憶（加速計算用）
+
 
     clock = pg.time.Clock()
     tmr = 0
@@ -102,52 +117,23 @@ def main():
         in_x, in_y = check_bound(kk_rct)
         if not (in_x and in_y):
             kk_rct.center = prev_center
-    
-
-        """
-        爆弾の拡大・加速処理
-        1. 50フレームごとに爆弾の半径を1増加させる
-            ・# 基本速度を記憶（base_vx, base_vy）
-            ・if文で50フレームごとに処理を実行
-            ・pg.Surfaceとpg.draw.circleで新しい爆弾画像を作成
-            ・set_colorkeyで黒を透明に設定
-        2. 爆弾の速度を1.02倍にする 
-            ・base_vx, base_vyを使って速度を計算
-            ・速度を整数に変換
-        3. 爆弾画像の再描画 
-            ・古い中心位置を保存
-            ・新しい爆弾画像のRectを取得し、中心位置を古い位置に設定
-        """
-        if tmr % 50 == 0:
-            # 爆弾の半径を1増加
-            bb_radius += 3
-            # 爆弾画像の再作成
-            bb_img = pg.Surface((bb_radius * 2, bb_radius * 2))
-            bb_img.fill((0, 0, 0))
-            pg.draw.circle(bb_img, (255, 0, 0), (bb_radius, bb_radius), bb_radius)
-            bb_img.set_colorkey((0, 0, 0))
-            # 古い中心位置を保存
+        # 爆弾の段階（サイズ）と加速度を選び，移動量を計算して移動_テスト用にoverに表現して
+        idx = min(tmr // 500, len(bb_imgs) - 1)
+        if bb_img is not bb_imgs[idx]:
             old_center = bb_rct.center
-            # 新しい爆弾画像のRectを取得し、中心位置を古い位置に設定
+            bb_img = bb_imgs[idx]
             bb_rct = bb_img.get_rect()
             bb_rct.center = old_center
 
-
-            # 爆弾の速度を1.02倍にする
-            base_vx *= 1.02
-            base_vy *= 1.02
-            vx = int(base_vx) if vx > 0 else -int(base_vx)
-            vy = int(base_vy) if vy > 0 else -int(base_vy)
-            
-
-        # 爆弾の次フレーム位置を確認し，画面外に出る方向の速度を反転して移動
-        next_bb = bb_rct.move(vx, vy)
+        avx = int(vx * bb_accs[idx])
+        avy = int(vy * bb_accs[idx])
+        next_bb = bb_rct.move(avx, avy)
         in_x_bb, in_y_bb = check_bound(next_bb)
         if not in_x_bb:
             vx *= -1
         if not in_y_bb:
             vy *= -1
-        bb_rct.move_ip(vx, vy)
+        bb_rct.move_ip(int(vx * bb_accs[idx]), int(vy * bb_accs[idx]))
 
         # 衝突判定: こうかとんが爆弾と衝突したらGameOver画面を表示して終了
         if kk_rct.colliderect(bb_rct):
